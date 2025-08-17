@@ -88,7 +88,7 @@ const Dashboard = () => {
                 )}
               </>
             ) : (
-              <Text>Loading user data...</Text>
+              <Text>Loading user data</Text>
             )}
           </View>
         </ScrollView>
