@@ -16,6 +16,16 @@ web-build/
 ios
 android
 
+# Android build artifacts
+android/.gradle/
+android/app/build/
+android/build/
+
+# iOS build artifacts
+ios/build/
+ios/Pods/
+
+
 # macOS
 .DS_Store
 
