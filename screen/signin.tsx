@@ -13,7 +13,8 @@ import "../global.css"; // Ensure global styles are imported
 import { Alert } from 'react-native';
 import { supabase } from '../supabaseClient';
 import { GoogleSignin, statusCodes, isSuccessResponse, isErrorWithCode } from '@react-native-google-signin/google-signin';
-
+import { useContext } from "react";
+import { UserContext } from "../context/UserContext";
 
 const webClientId = process.env.WEB_CLIENT_ID;
 
@@ -28,6 +29,7 @@ type RootStackParamList = {
   dashboard: {
     userInfo: any;  // your user info type here
   };
+  main: { screen?: string; params?: any };
 };
 
 
@@ -44,105 +46,116 @@ const Signin = () => {
   const [loading, setLoading] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [userInfo, setUserInfo] = useState<any>(null);
+  const { setUser } = useContext(UserContext);
 
 
   // Function to handle Google Sign-In
-  const handleGoogleSignIn = async () => {
-    try {
-      await GoogleSignin.hasPlayServices();
-      await GoogleSignin.signOut(); // Force account chooser
-      setLoading(true);
-
-      const response = await GoogleSignin.signIn();
-
-      if (isSuccessResponse(response)) {
-        const userData = response.data;
-
-        // Avatar list
-        const avatars = [
-          "https://robohash.org/user1.png",
-          "https://robohash.org/user2.png",
-          "https://robohash.org/user3.png",
-          "https://api.dicebear.com/6.x/bottts/png?seed=avatar1",  // 👈 PNG not SVG
-          "https://api.dicebear.com/6.x/bottts/png?seed=avatar2",
-          "https://api.dicebear.com/6.x/shapes/png?seed=avatar3",
-          "https://api.dicebear.com/6.x/icons/png?seed=avatar4",
-          "https://api.dicebear.com/6.x/fun-emoji/png?seed=avatar5"
-        ];
-
-        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
-
-        // Check if user already exists in Supabase
-        const { data: existingUser, error: fetchError } = await supabase
-          .from("tblUsers")
-          .select("*")
-          .eq("user_email", userData.user?.email)
-          .maybeSingle(); // single() returns null if no match
-
-        if (fetchError) {
-          console.error("Error checking existing user:", fetchError);
-          Alert.alert("An error occurred. Try again.");
-          return;
-        }
-
-        if (!existingUser) {
-          // User does not exist — insert
-          const supabaseUserData = {
-            user_name: userData.user?.name || "unknown",
-            user_email: userData.user?.email || "unknown@example.com",
-            user_age: 18, // default age
-            profile_image: randomAvatar,
-          };
-
-          const { error: supabaseError } = await supabase
+    const handleGoogleSignIn = async () => {
+      try {
+        await GoogleSignin.hasPlayServices();
+        await GoogleSignin.signOut(); // Force account chooser
+        setLoading(true);
+  
+        const response = await GoogleSignin.signIn();
+  
+        if (isSuccessResponse(response)) {
+          const userData = response.data;
+  
+          // Avatar list
+          const avatars = [
+            "https://robohash.org/user1.png",
+            "https://robohash.org/user2.png",
+            "https://robohash.org/user3.png",
+            "https://api.dicebear.com/6.x/bottts/png?seed=avatar1",
+            "https://api.dicebear.com/6.x/bottts/png?seed=avatar2",
+            "https://api.dicebear.com/6.x/shapes/png?seed=avatar3",
+            "https://api.dicebear.com/6.x/icons/png?seed=avatar4",
+            "https://api.dicebear.com/6.x/fun-emoji/png?seed=avatar5"
+          ];
+  
+          const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+  
+          // Check if user already exists in Supabase
+          const { data: existingUser, error: fetchError } = await supabase
             .from("tblUsers")
-            .insert([supabaseUserData]);
-
-          if (supabaseError) {
-            console.error("Supabase Insert Error:", supabaseError);
-            Alert.alert("Could not save user details. Try again.");
+            .select("*")
+            .eq("user_email", userData.user?.email)
+            .maybeSingle();
+  
+          if (fetchError) {
+            console.error("Error checking existing user:", fetchError);
+            Alert.alert("An error occurred. Try again.");
             return;
           }
+  
+          let userToStore;
+  
+          if (!existingUser) {
+            // User does not exist — insert
+            const supabaseUserData = {
+              user_name: userData.user?.name || "unknown",
+              user_email: userData.user?.email || "unknown@example.com",
+              user_age: 18, // default age
+              profile_image: randomAvatar,
+            };
+  
+            const { error: supabaseError, data: insertedUser } = await supabase
+              .from("tblUsers")
+              .insert([supabaseUserData])
+              .select()
+              .maybeSingle();
+  
+            if (supabaseError) {
+              console.error("Supabase Insert Error:", supabaseError);
+              Alert.alert("Could not save user details. Try again.");
+              return;
+            }
+  
+            userToStore = insertedUser;
+          } else {
+            userToStore = existingUser;
+          }
+  
+          // ✅ Save verified user globally
+          setUser(userToStore);
+  
+          // Redirect to Dashboard tab
+          Alert.alert(
+            "Login Successful",
+            "You have successfully signed in.",
+            [
+              {
+                text: "OK",
+                onPress: () =>
+                  navigation.replace("main", {
+                    screen: "Dashboard", // MainTabs dashboard tab
+                  }),
+              },
+            ],
+            { cancelable: false }
+          );
+        } else {
+          console.log("Login cancelled or failed:", response);
         }
-
-        // Save user info to state / AsyncStorage if needed
-        setUserInfo(userData);
-
-        // Redirect to dashboard
-        Alert.alert(
-          "Login Successful",
-          "You have successfully signed in.",
-          [
-            {
-              text: "OK",
-              onPress: () =>
-                navigation.replace("dashboard", { userInfo: userData }),
-            },
-          ],
-          { cancelable: false }
-        );
-      } else {
-        console.log("Login cancelled or failed:", response);
-      }
-    } catch (error) {
-      if (isErrorWithCode(error)) {
-        switch (error.code) {
-          case statusCodes.IN_PROGRESS:
-            Alert.alert("Sign in is in progress");
-            break;
-          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Play services are not available");
-            break;
-          default:
-            Alert.alert("An unknown error occurred");
+      } catch (error) {
+        if (isErrorWithCode(error)) {
+          switch (error.code) {
+            case statusCodes.IN_PROGRESS:
+              Alert.alert("Sign in is in progress");
+              break;
+            case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+              Alert.alert("Play services are not available");
+              break;
+            default:
+              Alert.alert("An unknown error occurred");
+          }
+        } else {
+          Alert.alert("An error occurred during sign in");
         }
-      } else {
-        Alert.alert("An error occurred during sign in");
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   const handleLogin = async () => {
     if (!email || !password || !name) {

@@ -17,6 +17,9 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebaseConfig'; // Import your Firebase config
 import { supabase } from '../supabaseClient';
 
+import { useContext } from "react";
+import { UserContext } from "../context/UserContext";
+
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -33,6 +36,7 @@ type RootStackParamList = {
   dashboard: {
     userInfo: any;  // your user info type here
   };
+  main: { screen?: string; params?: any };
 };
 
 
@@ -48,6 +52,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [userInfo, setUserInfo] = useState<any>(null);
+  const { setUser } = useContext(UserContext);
 
   //The code below is used to restore user info from AsyncStorage when the component mounts
   // // Load user info from AsyncStorage on mount
@@ -93,8 +98,14 @@ const Login = () => {
         return;
       }
 
-      // 3. Redirect to dashboard with user info
-      navigation.replace("dashboard", { userInfo });
+      // Save user to global context
+      setUser(userInfo);
+
+      // 3. Redirect to MainTabs with Dashboard tab active
+      navigation.replace("main", {
+        screen: "Dashboard", //  tell MainTabs to open Dashboard tab
+        params: { userInfo }, // pass the fetched user info
+      });
 
     } catch (error: any) {
       setError(error.message || "An unexpected error occurred.");
@@ -119,7 +130,7 @@ const Login = () => {
           "https://robohash.org/user1.png",
           "https://robohash.org/user2.png",
           "https://robohash.org/user3.png",
-          "https://api.dicebear.com/6.x/bottts/png?seed=avatar1",  // 👈 PNG not SVG
+          "https://api.dicebear.com/6.x/bottts/png?seed=avatar1",
           "https://api.dicebear.com/6.x/bottts/png?seed=avatar2",
           "https://api.dicebear.com/6.x/shapes/png?seed=avatar3",
           "https://api.dicebear.com/6.x/icons/png?seed=avatar4",
@@ -133,13 +144,15 @@ const Login = () => {
           .from("tblUsers")
           .select("*")
           .eq("user_email", userData.user?.email)
-          .maybeSingle(); // single() returns null if no match
+          .maybeSingle();
 
         if (fetchError) {
           console.error("Error checking existing user:", fetchError);
           Alert.alert("An error occurred. Try again.");
           return;
         }
+
+        let userToStore;
 
         if (!existingUser) {
           // User does not exist — insert
@@ -150,21 +163,27 @@ const Login = () => {
             profile_image: randomAvatar,
           };
 
-          const { error: supabaseError } = await supabase
+          const { error: supabaseError, data: insertedUser } = await supabase
             .from("tblUsers")
-            .insert([supabaseUserData]);
+            .insert([supabaseUserData])
+            .select()
+            .maybeSingle();
 
           if (supabaseError) {
             console.error("Supabase Insert Error:", supabaseError);
             Alert.alert("Could not save user details. Try again.");
             return;
           }
+
+          userToStore = insertedUser;
+        } else {
+          userToStore = existingUser;
         }
 
-        // Save user info to state / AsyncStorage if needed
-        setUserInfo(userData);
+        // ✅ Save verified user globally
+        setUser(userToStore);
 
-        // Redirect to dashboard
+        // Redirect to Dashboard tab
         Alert.alert(
           "Login Successful",
           "You have successfully signed in.",
@@ -172,7 +191,9 @@ const Login = () => {
             {
               text: "OK",
               onPress: () =>
-                navigation.replace("dashboard", { userInfo: userData }),
+                navigation.replace("main", {
+                  screen: "Dashboard", // MainTabs dashboard tab
+                }),
             },
           ],
           { cancelable: false }
@@ -199,6 +220,7 @@ const Login = () => {
       setLoading(false);
     }
   };
+
 
   return (
     <LinearGradient
